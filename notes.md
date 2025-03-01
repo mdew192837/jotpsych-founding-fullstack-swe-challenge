@@ -14,4 +14,11 @@ THIS IS THE MOST IMPORTANT FILE IN THE ENTIRE REPO! HUMAN WRITING ONLY! NO AI AL
 - Decided to use the React Spinners library since I had used it before and seemed good.
 - The styling was too barebones so decided to install material ui and do some basic styling.
 
-# 3.
+# 3. Adding the version checking
+
+- This took me a while. Did not anticipate it being very difficult. Didn't get to do much cleanup for time reasons.
+- Implemented it by adding version tracking, a /version endpoint
+- Used this in middleware decorator check_version_compatibiltiy() that checks for X-Frontend-Version, returns 409 if mismatch
+- ApiService doesn't allow calls if mismatch
+- Note did not do any auto updating of frontend version
+- Exposed methods so that UI components can know when mismatch is detected and UI is updated. (snackbar alert + disabled prop)

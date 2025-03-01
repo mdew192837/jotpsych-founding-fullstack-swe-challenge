@@ -3,12 +3,38 @@ from flask_cors import CORS
 import time
 import random
 from typing import Dict, Optional, Literal
+from functools import wraps
 
 app = Flask(__name__)
 CORS(app)
 
-# TODO: Implement version tracking
+# Version tracking
 VERSION = "1.0.0"
+
+# Middleware to check version compatibility
+def check_version_compatibility():
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Get frontend version from headers
+            frontend_version = request.headers.get('X-Frontend-Version')
+            if not frontend_version:
+                return jsonify({
+                    "error": "Version mismatch",
+                    "message": "Frontend version header is missing. API requests must include X-Frontend-Version header.",
+                    "backend_version": VERSION,
+                    "frontend_version": None
+                }), 409  # Conflict status code
+            elif frontend_version != VERSION:
+                return jsonify({
+                    "error": "Version mismatch",
+                    "message": f"Your application (v{frontend_version}) is out of date with the server (v{VERSION}). Please refresh your browser.",
+                    "backend_version": VERSION,
+                    "frontend_version": frontend_version
+                }), 409  # Conflict status code
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 
 def process_transcription(job_id: str, audio_data: bytes):
@@ -41,7 +67,13 @@ def get_user_model_from_db(user_id: str) -> Literal["openai", "anthropic"]:
     return random.choice(["openai", "anthropic"])
 
 
+@app.route('/version', methods=['GET'])
+def get_version():
+    """Return the current API version"""
+    return jsonify({"version": VERSION})
+
 @app.route('/transcribe', methods=['POST'])
+@check_version_compatibility()
 def transcribe_audio():
     result = process_transcription("xyz", "abcde")
 
@@ -50,9 +82,14 @@ def transcribe_audio():
 
     return jsonify({
         "transcription": result,
+        "version": VERSION
         # TODO: Add category
     })
 
 
 if __name__ == '__main__':
+    print(f"Starting server with version: {VERSION}")
+    print("Registered routes:")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.endpoint}: {rule}")
     app.run(host='0.0.0.0', port=8000, debug=True)

@@ -7,6 +7,7 @@ import {
   Stack
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import APIService from "../services/APIService";
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(3),
@@ -20,7 +21,12 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
   maxWidth: "400px",
 }));
 
-const AudioRecorder = ({ onTranscriptionComplete }) => {
+interface AudioRecorderProps {
+  onTranscriptionComplete: (text: string) => void;
+  disabled?: boolean;
+}
+
+const AudioRecorder = ({ onTranscriptionComplete, disabled = false }: AudioRecorderProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
@@ -72,18 +78,18 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
-        const formData = new FormData();
-        formData.append("audio", audioBlob);
-
+        
         try {
           setIsTranscribing(true);
-          // TODO: Use APIService for api requests
-          const response = await fetch("http://localhost:8000/transcribe", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          onTranscriptionComplete(data.transcription);
+          // Use APIService for API requests
+          const response = await APIService.transcribeAudio(audioBlob);
+          
+          if (response.error) {
+            console.error("Error transcribing audio:", response.error);
+            // Display error to user if needed
+          } else if (response.data) {
+            onTranscriptionComplete(response.data.transcription);
+          }
         } catch (error) {
           console.error("Error sending audio:", error);
         } finally {
@@ -102,6 +108,13 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
 
   return (
     <StyledPaper>
+      {disabled && (
+        <Typography variant="body2" color="error" sx={{ mb: 2, textAlign: 'center', fontWeight: 'medium' }}>
+          Recording disabled due to version mismatch.
+          Please refresh the page to continue.
+        </Typography>
+      )}
+
       {!isRecording && !isTranscribing && finalRecordingTime > 0 && (
         <Typography variant="body2" color="text.secondary">
           Final recording time: {finalRecordingTime}s
@@ -120,8 +133,12 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
             onClick={isRecording ? stopRecording : startRecording}
             variant="contained"
             color={isRecording ? "error" : "primary"}
-            disabled={isTranscribing}
-            sx={{ minWidth: 180, py: 1 }}
+            disabled={isTranscribing || disabled}
+            sx={{
+              minWidth: 180, 
+              py: 1,
+              opacity: disabled ? 0.7 : 1
+            }}
           >
             {isRecording
               ? `Stop Recording (${recordingTime}s)`
