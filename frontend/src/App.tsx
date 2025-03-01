@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from "react";
 import AudioRecorder from "./components/AudioRecorder";
 import APIService from "./services/APIService";
-import { Alert, Button, Snackbar } from "@mui/material";
+import { Alert, Button, Snackbar, Typography, Box, Paper, Divider } from "@mui/material";
+
+interface Transcription {
+  id: string;
+  text: string;
+  timestamp: Date;
+}
 
 function App() {
-  const [transcription, setTranscription] = useState<string>("");
+  const [transcriptions, setTranscriptions] = useState<Transcription[]>([]);
   const [versionMismatch, setVersionMismatch] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ backend: string; frontend: string } | null>(null);
   
@@ -27,8 +33,15 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  const handleTranscriptionComplete = (text: string) => {
-    setTranscription(text);
+  const handleTranscriptionComplete = (text: string, jobId: string) => {
+    // Add the new transcription to the list
+    const newTranscription: Transcription = {
+      id: jobId,
+      text: text,
+      timestamp: new Date()
+    };
+    
+    setTranscriptions(prev => [newTranscription, ...prev]);
   };
   
   const handleRefresh = () => {
@@ -65,11 +78,24 @@ function App() {
         onTranscriptionComplete={handleTranscriptionComplete} 
         disabled={versionMismatch} 
       />
-      {transcription && (
-        <div className="mt-8 p-4 bg-gray-100 rounded-lg">
-          <h2 className="font-semibold mb-2">Transcription:</h2>
-          <p>{transcription}</p>
-        </div>
+      
+      {transcriptions.length > 0 && (
+        <Box className="mt-8 w-full max-w-2xl">
+          <Typography variant="h6" gutterBottom>Transcriptions ({transcriptions.length})</Typography>
+          <Divider sx={{ mb: 2 }} />
+          
+          {transcriptions.map((item, index) => (
+            <Paper key={item.id} elevation={1} sx={{ p: 3, mb: 2, borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="subtitle2" color="primary">Job ID: {item.id.split('-')[0]}...</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {item.timestamp.toLocaleTimeString()}
+                </Typography>
+              </Box>
+              <Typography variant="body1">{item.text}</Typography>
+            </Paper>
+          ))}
+        </Box>
       )}
     </div>
   );

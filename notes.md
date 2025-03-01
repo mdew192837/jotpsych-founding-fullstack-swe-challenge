@@ -22,3 +22,63 @@ THIS IS THE MOST IMPORTANT FILE IN THE ENTIRE REPO! HUMAN WRITING ONLY! NO AI AL
 - ApiService doesn't allow calls if mismatch
 - Note did not do any auto updating of frontend version
 - Exposed methods so that UI components can know when mismatch is detected and UI is updated. (snackbar alert + disabled prop)
+
+# 4. Adding concurrency
+
+- This was much funner than I thought it was going to be!
+- Backend Changes
+  - In-memory job queue with UUIDs
+  - Pending, processing, completed, failed states
+  - Progress tracking with percentage completion
+  - Timestamping for job state changes
+  - Used python's threading module to handle multiple jobs
+  - API returns immediately with a job ID
+  - Backend processing using daemon threads
+  - Simulated transcription with delays, mocked categories, sentiment, and confidence scores for future use cases (saw a categorization llm thing later in the doc)
+  - Endpoints to transcribe, get job by id, and retrieve all jobs
+- Frontend changes:
+  - Managed state in ActiveJobs
+  - Implemented display using cards with progress bars and status chips, sorting by job status
+  - Polling mechanism for job status updates
+  - Dyanmic UI updates based on progress
+
+Production considerations:
+
+## Job Queue Management
+
+- Using a distributed task queue such as celery
+- Message brokers like redis or RabbitMQ to handle job distribution
+- Store the jobs in PostgreSQL or MongoDB instead of in memory
+
+## Scaling Considerations
+
+- Split into separate services for API, job processing, and storage
+- Multiple workers to process jobs in parallel
+- Distribute incoming requests using nginx or kubernetes
+- Adjust worker count based on queue size
+
+## Real time updates
+
+- Websocket connections for real-time job updates
+- Could use server-sent events
+- Implement push notifications for job completion
+
+## Error handling
+
+- Retry logic - implement exponential backoff for failed jobs
+- Circuit breakers to prevent cascading failures
+- Failed job queues for analysis
+- Could monitor system using something like prometheus and grafana
+
+## Security
+
+- Proper user auth (OAuth / JWT)
+- RBAC for job management
+- Rate limiting on the API
+- Encrypt sensitive data at rest and in transit
+
+## Transcription
+
+- Integrate with APIs but maybe have hybrid approach for cloud APIs and self-hosted models
+- Caching (I know we see it below)
+- Batch processing

@@ -4,6 +4,17 @@ interface APIResponse<T> {
   version?: string;
 }
 
+interface TranscriptionJob {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  result: string | null;
+  error: string | null;
+}
+
 type VersionChangeCallback = (backendVersion: string, frontendVersion: string) => void;
 
 class APIService {
@@ -154,12 +165,54 @@ class APIService {
     }
   }
 
-  // Updated transcribeAudio using the generic request handler
-  async transcribeAudio(audioBlob: Blob): Promise<APIResponse<any>> {
+  // Updated transcribeAudio to start a transcription job
+  async transcribeAudio(audioBlob: Blob): Promise<APIResponse<{job_id: string; status: string}>> {
     const formData = new FormData();
     formData.append("audio", audioBlob);
 
-    return this.makeRequest<any>("/transcribe", "POST", formData);
+    return this.makeRequest<{job_id: string; status: string}>("/transcribe", "POST", formData);
+  }
+  
+  // Get status of a specific transcription job
+  async getJobStatus(jobId: string): Promise<APIResponse<TranscriptionJob>> {
+    console.log(`Polling job status for job ${jobId}`);
+    try {
+      const response = await this.makeRequest<TranscriptionJob>(`/job/${jobId}`, "GET");
+      console.log(`Got response for job ${jobId}:`, response);
+      
+      if (response.error) {
+        console.error(`Error in getJobStatus response for job ${jobId}:`, response.error);
+      } else if (!response.data) {
+        console.error(`No data in getJobStatus response for job ${jobId}`);
+        return { error: 'No data returned from server' };
+      }
+      
+      return response;
+    } catch (error) {
+      console.error(`Error polling job ${jobId}:`, error);
+      return { error: `Failed to get job status: ${error}` };
+    }
+  }
+  
+  // Get all transcription jobs
+  async getAllJobs(): Promise<APIResponse<{jobs: TranscriptionJob[]}>> {
+    console.log('Fetching all jobs from server');
+    try {
+      const response = await this.makeRequest<{jobs: TranscriptionJob[]}>("/jobs", "GET");
+      console.log('All jobs response:', response);
+      
+      if (response.error) {
+        console.error('Error in getAllJobs response:', response.error);
+      } else if (!response.data) {
+        console.error('No data in getAllJobs response');
+        return { error: 'No data returned from server' };
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error getting all jobs:', error);
+      return { error: `Failed to get all jobs: ${error}` };
+    }
   }
 
   // Public method to check if there's a version mismatch
