@@ -1,7 +1,28 @@
 import React, { useState, useEffect } from "react";
+import {
+  Button,
+  Typography,
+  CircularProgress,
+  Paper,
+  Stack
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
+
+const StyledPaper = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(3),
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: theme.spacing(2),
+  borderRadius: theme.shape.borderRadius,
+  boxShadow: theme.shadows[1],
+  width: "100%",
+  maxWidth: "400px",
+}));
 
 const AudioRecorder = ({ onTranscriptionComplete }) => {
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
     null
   );
@@ -55,6 +76,7 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
         formData.append("audio", audioBlob);
 
         try {
+          setIsTranscribing(true);
           // TODO: Use APIService for api requests
           const response = await fetch("http://localhost:8000/transcribe", {
             method: "POST",
@@ -64,9 +86,10 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
           onTranscriptionComplete(data.transcription);
         } catch (error) {
           console.error("Error sending audio:", error);
+        } finally {
+          setIsTranscribing(false);
+          stream.getTracks().forEach((track) => track.stop());
         }
-
-        stream.getTracks().forEach((track) => track.stop());
       };
 
       recorder.start();
@@ -78,30 +101,40 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      {!isRecording && finalRecordingTime > 0 && (
-        <p className="text-sm text-gray-600">
+    <StyledPaper>
+      {!isRecording && !isTranscribing && finalRecordingTime > 0 && (
+        <Typography variant="body2" color="text.secondary">
           Final recording time: {finalRecordingTime}s
-        </p>
+        </Typography>
       )}
-      <button
-        onClick={isRecording ? stopRecording : startRecording}
-        className={`px-6 py-3 rounded-lg font-semibold ${
-          isRecording
-            ? "bg-red-500 hover:bg-red-600 text-white"
-            : "bg-blue-500 hover:bg-blue-600 text-white"
-        }`}
-      >
-        {isRecording
-          ? `Stop Recording (${recordingTime}s)`
-          : "Start Recording"}
-      </button>
-      {isRecording && (
-        <p className="text-sm text-gray-600">
-          Recording in progress (Current time: {recordingTime}s)
-        </p>
+      {isTranscribing ? (
+        <Stack direction="column" spacing={2} alignItems="center">
+          <CircularProgress size={40} color="primary" />
+          <Typography variant="body2" color="text.secondary">
+            Transcribing audio...
+          </Typography>
+        </Stack>
+      ) : (
+        <>
+          <Button
+            onClick={isRecording ? stopRecording : startRecording}
+            variant="contained"
+            color={isRecording ? "error" : "primary"}
+            disabled={isTranscribing}
+            sx={{ minWidth: 180, py: 1 }}
+          >
+            {isRecording
+              ? `Stop Recording (${recordingTime}s)`
+              : "Start Recording"}
+          </Button>
+          {isRecording && (
+            <Typography variant="body2" color="text.secondary">
+              Recording in progress (Current time: {recordingTime}s)
+            </Typography>
+          )}
+        </>
       )}
-    </div>
+    </StyledPaper>
   );
 };
 
