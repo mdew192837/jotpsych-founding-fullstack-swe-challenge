@@ -82,3 +82,75 @@ Production considerations:
 - Integrate with APIs but maybe have hybrid approach for cloud APIs and self-hosted models
 - Caching (I know we see it below)
 - Batch processing
+
+# 5. Adding User Identity
+
+This one just tried to implement as fast as possible.
+
+- Backend Changes:
+  - `/user` endpoint to generate unique user IDs
+  - Middleware to log user IDs with each request
+  - Store user ID with each job
+- Frontend Changes:
+  - localStorage persistence for user IDs
+  - Fallback client-side ID generation for resilience
+  - getUserID method for components
+  - Added user ID to the App component
+
+## Production Improvements
+
+- Implement proper authentication using OAuth or JWT
+- Replace localStorage with secure HTTP-only cookies
+- Create persistent user profiles with preferences and settings (database model)
+- RBAC for finer permissions
+
+# 6. In-memory Caching System + LLM Mocking
+
+Went with mocking for time sake. Used the categorization stuff I added earlier.
+
+Implemented a simple in-memory caching system to optimize expensive operations:
+
+- Backend Changes:
+  - Two in-memory cache dictionaries: `user_model_cache` and `llm_categorization_cache`
+  - Implemented caching for `get_user_model_from_db`
+  - Caching for LLM categorization results, keys based on user ID and truncated transcript text
+  - Added expiration timestamps (24-hour TTL) to automatically invalidate cache entries
+  - Created a `/cache/stats` endpoint for monitoring cache performance
+  - Mock implementation simulates different response formats from OpenAI vs Anthropic
+
+## Production Improvements
+
+- Distributed Caching:
+  - Use Redis or Memcached for persistence across server restarts
+  - Multiple clusters
+  - Use consistent hashing for cache key distribution
+
+- Cache Management:
+  - Add configurable TTL values based on data types (user preferences vs LLM results)
+  - Implement cache eviction policies (LRU, LFU) to manage memory usage
+  - Add cache warming strategies for frequently accessed data
+  - Implement admin controls to manually flush caches
+
+- Performance:
+  - Add cache hit/miss metrics and dashboards with Prometheus/Grafana
+  - Implement cache compression for large responses
+
+- LLM:
+  - Store API keys securely in a vault service (HashiCorp Vault, AWS Secrets Manager)
+  - Implement request batching for LLM calls
+  - Add circuit breakers to handle LLM service outages
+  - Implement prompt templates with versioning
+  - Add request throttling to stay within API rate limits
+  - Implement a fallback chain of LLM providers
+  - Maybe some local embedding models for backup
+
+- Security
+  - Encrypt sensitive data in the cache
+  - Implement proper cache isolation between users
+  - Add audit logging for cache operations
+  - Implement cache access controls
+  
+- Scalability
+  - Partition cache by data type and access patterns
+  - Implement cache replication for read-heavy workloads
+  - Add cache pre-computation for predictable queries

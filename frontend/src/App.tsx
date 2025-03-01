@@ -13,6 +13,7 @@ function App() {
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([]);
   const [versionMismatch, setVersionMismatch] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ backend: string; frontend: string } | null>(null);
+  const [userId, setUserId] = useState<string>("");
   
   useEffect(() => {
     // Register for version change notifications
@@ -29,8 +30,16 @@ function App() {
       }
     });
     
-    // Clean up subscription on unmount
-    return () => unsubscribe();
+    // Get user ID after a short delay to ensure it's initialized
+    const timer = setTimeout(() => {
+      setUserId(APIService.getUserID());
+    }, 1000);
+    
+    // Clean up subscription and timer on unmount
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
   const handleTranscriptionComplete = (text: string, jobId: string) => {
@@ -50,7 +59,12 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
-      <h1 className="text-2xl font-bold mb-8">Audio Transcription Demo</h1>
+      <h1 className="text-2xl font-bold mb-2">Audio Transcription Demo</h1>
+      {userId && (
+        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+          User ID: {userId.substring(0, 8)}...
+        </Typography>
+      )}
       
       {/* Version mismatch snackbar */}
       <Snackbar 

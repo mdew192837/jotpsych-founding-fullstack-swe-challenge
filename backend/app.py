@@ -4,18 +4,28 @@ import time
 import random
 import uuid
 import threading
-from typing import Dict, Optional, Literal, List
+import json
+from typing import Dict, Optional, Literal, List, Any
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
+import logging
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Version tracking
 VERSION = "1.0.0"
 
 # Job queue to store transcription jobs
 job_queue = {}
+
+# In-memory caches
+user_model_cache = {}  # Cache for user's preferred LLM model
+llm_categorization_cache = {}  # Cache for LLM categorization results
 
 # Job status enum
 JOB_STATUS = {
@@ -25,7 +35,7 @@ JOB_STATUS = {
     "FAILED": "failed"
 }
 
-# Middleware to check version compatibility
+# Middleware to check version compatibility and log user ID
 def check_version_compatibility():
     def decorator(f):
         @wraps(f)
@@ -46,6 +56,14 @@ def check_version_compatibility():
                     "backend_version": VERSION,
                     "frontend_version": frontend_version
                 }), 409  # Conflict status code
+                
+            # Log user ID if present
+            user_id = request.headers.get('X-User-ID')
+            if user_id:
+                logger.info(f"Request to {request.path} from user {user_id}")
+            else:
+                logger.info(f"Request to {request.path} from unknown user")
+                
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -105,45 +123,201 @@ def process_transcription(job_id: str, audio_data: bytes = None):
 
 
 def categorize_transcription(transcription_string: str, user_id: str = None):
-    """Mock function to categorize transcription text."""
-    # Simulate processing time
-    time.sleep(0.5)
-    
-    # Simple keyword-based categorization
-    categories = []
-    
-    if any(word in transcription_string.lower() for word in ["car", "muscle", "power", "vehicle"]):
-        categories.append("Automotive")
-    
-    if any(word in transcription_string.lower() for word in ["eagle", "bird", "sky", "soar", "creature"]):
-        categories.append("Wildlife")
+    """Categorize transcription text using the user's preferred LLM model."""
+    if not transcription_string:
+        return {
+            "categories": ["General"],
+            "sentiment": "neutral",
+            "confidence": 0.5
+        }
         
-    if any(word in transcription_string.lower() for word in ["sea", "diving", "ocean", "coral", "depths"]):
-        categories.append("Ocean/Marine")
+    # Log user ID if provided
+    if user_id:
+        logger.info(f"Categorizing transcription for user {user_id}")
     
-    if not categories:
-        categories.append("General")
-        
-    return {
-        "categories": categories,
-        "sentiment": random.choice(["positive", "neutral", "negative"]),
-        "confidence": random.uniform(0.7, 0.95)
+    # Generate a cache key based on the transcription content
+    # Using first 100 chars of transcription for the cache key is usually sufficient
+    # and keeps the cache keys to a reasonable size
+    cache_key = transcription_string[:100].strip().lower()
+    
+    # Check if we have this result cached
+    if cache_key in llm_categorization_cache and llm_categorization_cache[cache_key]['expires_at'] > datetime.now():
+        logger.info("Cache hit for transcription categorization")
+        return llm_categorization_cache[cache_key]['result']
+    
+    # Get the user's preferred model
+    model_provider = "openai"  # Default model
+    if user_id:
+        try:
+            model_provider = get_user_model_from_db(user_id)
+        except Exception as e:
+            logger.error(f"Error getting user model preference: {str(e)}")
+    
+    # Make LLM API call - we'll mock this for now
+    logger.info(f"Using {model_provider} to categorize transcription")
+    result = mock_llm_categorization(transcription_string, model_provider)
+    
+    # Cache the result for 24 hours
+    llm_categorization_cache[cache_key] = {
+        'result': result,
+        'expires_at': datetime.now() + timedelta(hours=24)
     }
+    
+    return result
+
+
+def mock_llm_categorization(text: str, provider: str) -> Dict[str, Any]:
+    """Mock function to simulate LLM categorization with different providers."""
+    # Simulate processing time (would be API call in production)
+    time.sleep(1.5)
+    
+    # Different mock behaviors based on provider
+    try:
+        if provider == "openai":
+            # Simulate OpenAI response style
+            categories = []
+            
+            if any(word in text.lower() for word in ["car", "muscle", "power", "vehicle"]):
+                categories.append("Automotive")
+            
+            if any(word in text.lower() for word in ["eagle", "bird", "sky", "soar", "creature"]):
+                categories.append("Wildlife")
+                
+            if any(word in text.lower() for word in ["sea", "diving", "ocean", "coral", "depths"]):
+                categories.append("Ocean/Marine")
+            
+            if not categories:
+                categories.append("General")
+                
+            # Formatting how OpenAI might return JSON
+            mock_response = json.dumps({
+                "categories": categories,
+                "sentiment": random.choice(["positive", "neutral", "negative"]),
+                "confidence": round(random.uniform(0.7, 0.95), 2),
+                "model": "gpt-4"
+            })
+            
+            # Parse the response to validate it's proper JSON
+            return json.loads(mock_response)
+            
+        elif provider == "anthropic":
+            # Simulate Anthropic response style
+            categories = []
+            
+            # Slightly different categorization logic to simulate model differences
+            if any(word in text.lower() for word in ["car", "vehicle", "drive", "road"]):
+                categories.append("Transportation")
+                
+            if any(word in text.lower() for word in ["animal", "bird", "creature", "wildlife", "eagle"]):
+                categories.append("Animals & Wildlife")
+                
+            if any(word in text.lower() for word in ["ocean", "sea", "water", "marine", "dive"]):
+                categories.append("Marine & Aquatic")
+                
+            if not categories:
+                categories.append("Miscellaneous")
+            
+            # Formatting how Anthropic might return JSON
+            mock_response = json.dumps({
+                "classification": {
+                    "categories": categories,
+                    "mood": random.choice(["positive", "neutral", "negative"]),
+                    "certainty": round(random.uniform(0.65, 0.9), 2)
+                },
+                "model": "claude-3-opus"
+            })
+            
+            # Parse and standardize to our expected format
+            parsed_response = json.loads(mock_response)
+            return {
+                "categories": parsed_response["classification"]["categories"],
+                "sentiment": parsed_response["classification"]["mood"],
+                "confidence": parsed_response["classification"]["certainty"],
+                "model": parsed_response["model"]
+            }
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM response: {str(e)}")
+        # Fallback to basic categorization
+        return {
+            "categories": ["General"],
+            "sentiment": "neutral",
+            "confidence": 0.5,
+            "error": "Failed to parse LLM response"
+        }
+    except Exception as e:
+        logger.error(f"Error in LLM categorization: {str(e)}")
+        return {
+            "categories": ["General"],
+            "sentiment": "neutral",
+            "confidence": 0.5,
+            "error": str(e)
+        }
 
 
 def get_user_model_from_db(user_id: str) -> Literal["openai", "anthropic"]:
     """
     Mocks a slow and expensive function to simulate fetching a user's preferred LLM model from database
     Returns either 'openai' or 'anthropic' after a random delay.
+    With caching to avoid repeated calls.
     """
+    # Check if we have a valid cached result
+    if user_id in user_model_cache and user_model_cache[user_id]['expires_at'] > datetime.now():
+        logger.info(f"Cache hit for user model preference: {user_id}")
+        return user_model_cache[user_id]['model']
+    
+    # Simulate slow database query
+    logger.info(f"Cache miss for user model preference: {user_id}, fetching from DB...")
     time.sleep(random.randint(2, 8))
-    return random.choice(["openai", "anthropic"])
+    model = random.choice(["openai", "anthropic"])
+    
+    # Cache the result for 24 hours
+    user_model_cache[user_id] = {
+        'model': model,
+        'expires_at': datetime.now() + timedelta(hours=24)
+    }
+    
+    return model
 
 
 @app.route('/version', methods=['GET'])
 def get_version():
     """Return the current API version"""
+    # Log user ID if present
+    user_id = request.headers.get('X-User-ID')
+    if user_id:
+        logger.info(f"Version request from user {user_id}")
+    else:
+        logger.info("Version request from unknown user")
+        
     return jsonify({"version": VERSION})
+
+@app.route('/cache/stats', methods=['GET'])
+@check_version_compatibility()
+def get_cache_stats():
+    """Return statistics about the caching system"""
+    # Count valid entries in user model cache
+    user_cache_size = sum(1 for entry in user_model_cache.values() 
+                         if entry['expires_at'] > datetime.now())
+    
+    # Count valid entries in categorization cache
+    llm_cache_size = sum(1 for entry in llm_categorization_cache.values() 
+                        if entry['expires_at'] > datetime.now())
+    
+    # Return cache statistics
+    return jsonify({
+        "user_model_cache_entries": user_cache_size,
+        "llm_categorization_cache_entries": llm_cache_size,
+        "version": VERSION
+    })
+
+@app.route('/user', methods=['GET'])
+def generate_user_id():
+    """Generate and return a unique user ID"""
+    # Generate a unique user ID
+    user_id = str(uuid.uuid4())
+    logger.info(f"Generated new user ID: {user_id}")
+    
+    return jsonify({"user_id": user_id, "version": VERSION})
 
 def start_transcription_job(job_id: str, audio_data=None):
     """Start a new transcription job in a separate thread"""
@@ -158,9 +332,12 @@ def start_transcription_job(job_id: str, audio_data=None):
 @check_version_compatibility()
 def transcribe_audio():
     try:
+        # Get user ID from headers
+        user_id = request.headers.get('X-User-ID')
+        
         # Generate a unique job ID
         job_id = str(uuid.uuid4())
-        print(f"Creating new transcription job with ID: {job_id}")
+        logger.info(f"Creating new transcription job with ID: {job_id} for user: {user_id or 'unknown'}")
         
         # Get the audio file from the request
         if 'audio' not in request.files:
@@ -179,7 +356,8 @@ def transcribe_audio():
             "updated_at": datetime.now().isoformat(),
             "completed_at": None,
             "result": None,
-            "error": None
+            "error": None,
+            "user_id": user_id
         }
         
         print(f"Job {job_id} initialized with status: {JOB_STATUS['PENDING']}")

@@ -21,12 +21,16 @@ class APIService {
   private baseUrl: string = "http://localhost:8000";
   private currentVersion: string = "1.0.0";
   private backendVersion: string = "";
-  private userID: string = "1234567890";
+  private userID: string = "";
   private versionMismatch: boolean = false;
   private versionChangeCallbacks: VersionChangeCallback[] = [];
   private versionCheckInterval: number | null = null;
+  private readonly USER_ID_KEY = "jotpsych_user_id";
 
   constructor() {
+    // Initialize user ID from localStorage or get from server
+    this.initializeUserID();
+    
     // Check version on initialization
     this.checkBackendVersion();
     
@@ -34,6 +38,58 @@ class APIService {
     this.versionCheckInterval = window.setInterval(() => {
       this.checkBackendVersion();
     }, 5 * 60 * 1000);
+  }
+  
+  // User identity management
+  private async initializeUserID(): Promise<void> {
+    // Try to get user ID from localStorage
+    const storedUserID = localStorage.getItem(this.USER_ID_KEY);
+    
+    if (storedUserID) {
+      console.log("Using stored user ID:", storedUserID);
+      this.userID = storedUserID;
+    } else {
+      // If no stored ID, request a new one from the backend
+      try {
+        const response = await fetch(`${this.baseUrl}/user`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'X-Frontend-Version': this.currentVersion
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.user_id) {
+            this.userID = data.user_id;
+            localStorage.setItem(this.USER_ID_KEY, this.userID);
+            console.log("Generated new user ID:", this.userID);
+          }
+        } else {
+          console.error("Failed to get user ID from server");
+          // Fall back to generating a client-side ID if server fails
+          this.userID = this.generateClientSideID();
+          localStorage.setItem(this.USER_ID_KEY, this.userID);
+        }
+      } catch (error) {
+        console.error("Error getting user ID:", error);
+        // Fall back to generating a client-side ID if request fails
+        this.userID = this.generateClientSideID();
+        localStorage.setItem(this.USER_ID_KEY, this.userID);
+      }
+    }
+  }
+  
+  // Fallback method to generate a client-side ID if server request fails
+  private generateClientSideID(): string {
+    return 'client-' + Math.random().toString(36).substring(2, 15) + 
+           Math.random().toString(36).substring(2, 15);
+  }
+  
+  // Get the current user ID
+  public getUserID(): string {
+    return this.userID;
   }
 
   // Version compatibility functionality
@@ -110,16 +166,20 @@ class APIService {
   ): Promise<APIResponse<T>> {
     try {
       // Don't make requests if there's a version mismatch
-      if (this.versionMismatch && endpoint !== '/version') {
+      if (this.versionMismatch && endpoint !== '/version' && endpoint !== '/user') {
         return {
           error: `Version mismatch detected: Your app (${this.currentVersion}) needs to be updated to match the server (${this.backendVersion}). Please refresh your browser.`
         };
       }
 
       const headers: HeadersInit = {
-        'X-Frontend-Version': this.currentVersion,
-        'X-User-ID': this.userID
+        'X-Frontend-Version': this.currentVersion
       };
+      
+      // Only add user ID if it's initialized and not a request to get a user ID
+      if (this.userID && endpoint !== '/user') {
+        headers['X-User-ID'] = this.userID;
+      }
 
       // Add Content-Type header if body is a plain object (not FormData)
       if (body && !(body instanceof FormData)) {
