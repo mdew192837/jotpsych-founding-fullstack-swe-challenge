@@ -1,45 +1,68 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import time
-import random
-import uuid
-import threading
 import json
-from typing import Dict, Optional, Literal, List, Any
-from functools import wraps
-from datetime import datetime, timedelta
 import logging
+import random
+import threading
+import time
+import uuid
+from datetime import datetime, timedelta
+from functools import wraps
+from typing import Dict, Optional, Literal, List, Any, Union, Tuple, TypedDict, cast
 
-app = Flask(__name__)
-CORS(app)
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Version tracking
+# Initialize Flask application
+app = Flask(__name__)
+CORS(app)
+
+# API version tracking
 VERSION = "1.0.0"
 
-# Job queue to store transcription jobs
-job_queue = {}
+# Job status constants
+class JobStatus:
+    """Enum-like class for job status values"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
-# In-memory caches
-user_model_cache = {}  # Cache for user's preferred LLM model
-llm_categorization_cache = {}  # Cache for LLM categorization results
+# Type definitions
+class TranscriptionCategories(TypedDict):
+    """Type for categorization results"""
+    categories: List[str]
+    sentiment: str
+    confidence: float
 
-# Job status enum
-JOB_STATUS = {
-    "PENDING": "pending",
-    "PROCESSING": "processing",
-    "COMPLETED": "completed",
-    "FAILED": "failed"
-}
+class TranscriptionJob(TypedDict):
+    """Type for transcription job"""
+    id: str
+    status: str
+    progress: int
+    created_at: str
+    updated_at: str
+    completed_at: Optional[str]
+    result: Optional[str]
+    error: Optional[str]
+    categories: Optional[TranscriptionCategories]
+    
+# Storage
+job_queue: Dict[str, TranscriptionJob] = {}  # Store transcription jobs
+user_model_cache: Dict[str, str] = {}  # Cache for user's preferred LLM model
+llm_categorization_cache: Dict[str, Dict[str, Any]] = {}  # Cache for LLM categorization results
 
-# Middleware to check version compatibility and log user ID
 def check_version_compatibility():
+    """Middleware decorator to check API version compatibility and log user ID.
+    
+    Returns:
+        Function: Decorated route function that checks version compatibility.
+    """
     def decorator(f):
         @wraps(f)
-        def decorated_function(*args, **kwargs):
+        def decorated_function(*args, **kwargs) -> Union[Response, Tuple[Response, int]]:
             # Get frontend version from headers
             frontend_version = request.headers.get('X-Frontend-Version')
             if not frontend_version:
@@ -69,15 +92,23 @@ def check_version_compatibility():
     return decorator
 
 
-def process_transcription(job_id: str, audio_data: bytes = None):
-    """Mock function to simulate async transcription processing. Returns a random transcription."""
+def process_transcription(job_id: str, audio_data: Optional[bytes] = None) -> Optional[str]:
+    """Mock function to simulate async transcription processing.
+    
+    Args:
+        job_id: The ID of the job to process
+        audio_data: Optional audio data bytes
+    
+    Returns:
+        Optional[str]: The transcription text if successful, None if failed
+    """
     try:
-        print(f"Starting processing for job {job_id}")
+        logger.info(f"Starting processing for job {job_id}")
         # Update job status to processing
-        job_queue[job_id]["status"] = JOB_STATUS["PROCESSING"]
+        job_queue[job_id]["status"] = JobStatus.PROCESSING
         job_queue[job_id]["progress"] = 10
         job_queue[job_id]["updated_at"] = datetime.now().isoformat()
-        print(f"Job {job_id} status updated to: {job_queue[job_id]['status']}, progress: {job_queue[job_id]['progress']}%")
+        logger.info(f"Job {job_id} status updated to: {job_queue[job_id]['status']}, progress: {job_queue[job_id]['progress']}%")
         
         # Simulate different processing stages - shorter times for testing
         processing_steps = 3
@@ -102,7 +133,7 @@ def process_transcription(job_id: str, audio_data: bytes = None):
         categories = categorize_transcription(transcription)
         
         # Update job with completed status and result
-        job_queue[job_id]["status"] = JOB_STATUS["COMPLETED"]
+        job_queue[job_id]["status"] = JobStatus.COMPLETED
         job_queue[job_id]["progress"] = 100
         job_queue[job_id]["result"] = transcription
         job_queue[job_id]["categories"] = categories
@@ -115,21 +146,29 @@ def process_transcription(job_id: str, audio_data: bytes = None):
     except Exception as e:
         # Handle errors by updating job status
         if job_id in job_queue:
-            job_queue[job_id]["status"] = JOB_STATUS["FAILED"]
+            job_queue[job_id]["status"] = JobStatus.FAILED
             job_queue[job_id]["error"] = str(e)
             job_queue[job_id]["updated_at"] = datetime.now().isoformat()
             print(f"Job {job_id} failed with error: {str(e)}")
         return None
 
 
-def categorize_transcription(transcription_string: str, user_id: str = None):
-    """Categorize transcription text using the user's preferred LLM model."""
+def categorize_transcription(transcription_string: str, user_id: Optional[str] = None) -> TranscriptionCategories:
+    """Categorize transcription text using the user's preferred LLM model.
+    
+    Args:
+        transcription_string: The text to categorize
+        user_id: Optional user ID to get model preferences
+    
+    Returns:
+        TranscriptionCategories: The categorization results
+    """
     if not transcription_string:
-        return {
+        return cast(TranscriptionCategories, {
             "categories": ["General"],
             "sentiment": "neutral",
             "confidence": 0.5
-        }
+        })
         
     # Log user ID if provided
     if user_id:
@@ -166,8 +205,16 @@ def categorize_transcription(transcription_string: str, user_id: str = None):
     return result
 
 
-def mock_llm_categorization(text: str, provider: str) -> Dict[str, Any]:
-    """Mock function to simulate LLM categorization with different providers."""
+def mock_llm_categorization(text: str, provider: str) -> TranscriptionCategories:
+    """Mock function to simulate LLM categorization with different providers.
+    
+    Args:
+        text: The text to categorize
+        provider: The LLM provider to simulate (e.g., 'openai', 'anthropic')
+        
+    Returns:
+        TranscriptionCategories: The categorization results
+    """
     # Simulate processing time (would be API call in production)
     time.sleep(1.5)
     
@@ -350,7 +397,7 @@ def transcribe_audio():
         # Initialize job in queue
         job_queue[job_id] = {
             "id": job_id,
-            "status": JOB_STATUS["PENDING"],
+            "status": JobStatus.PENDING,
             "progress": 0,
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
@@ -360,7 +407,7 @@ def transcribe_audio():
             "user_id": user_id
         }
         
-        print(f"Job {job_id} initialized with status: {JOB_STATUS['PENDING']}")
+        logger.info(f"Job {job_id} initialized with status: {JobStatus.PENDING}")
         print(f"Current job queue has {len(job_queue)} jobs")
         
         # Read audio data
@@ -374,7 +421,7 @@ def transcribe_audio():
         # Return job ID immediately
         return jsonify({
             "job_id": job_id,
-            "status": JOB_STATUS["PENDING"],
+            "status": JobStatus.PENDING,
             "version": VERSION
         })
     except Exception as e:
@@ -383,8 +430,15 @@ def transcribe_audio():
 
 @app.route('/job/<job_id>', methods=['GET'])
 @check_version_compatibility()
-def get_job_status(job_id):
-    """Get the status of a specific transcription job"""
+def get_job_status(job_id: str) -> Union[Response, Tuple[Response, int]]:
+    """Get the status of a specific transcription job.
+    
+    Args:
+        job_id: The ID of the job to check
+        
+    Returns:
+        Response with job status or error
+    """
     if job_id not in job_queue:
         return jsonify({
             "error": "Job not found",
@@ -401,13 +455,17 @@ def get_job_status(job_id):
 
 @app.route('/jobs', methods=['GET'])
 @check_version_compatibility()
-def get_all_jobs():
-    """Get status of all transcription jobs"""
+def get_all_jobs() -> Union[Response, Tuple[Response, int]]:
+    """Get status of all transcription jobs.
+    
+    Returns:
+        Response with all jobs or error
+    """
     try:
         # Log the current job queue state
-        print(f"Getting all jobs. Current job queue has {len(job_queue)} jobs")
+        logger.info(f"Getting all jobs. Current job queue has {len(job_queue)} jobs")
         for job_id, job in job_queue.items():
-            print(f"Job {job_id}: status={job['status']}, progress={job['progress']}")
+            logger.info(f"Job {job_id}: status={job['status']}, progress={job['progress']}")
         
         # Return list of all jobs (could be paginated in a real app)
         jobs_list = list(job_queue.values())

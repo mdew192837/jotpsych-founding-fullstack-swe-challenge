@@ -1,20 +1,33 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import AudioRecorder from "./components/AudioRecorder";
 import APIService from "./services/APIService";
 import { Alert, Button, Snackbar, Typography, Box, Paper, Divider } from "@mui/material";
 
+/**
+ * Represents a completed transcription to display
+ */
 interface Transcription {
+  /** Unique identifier for the transcription */
   id: string;
+  /** The transcribed text content */
   text: string;
+  /** When the transcription was created */
   timestamp: Date;
 }
 
-function App() {
+/**
+ * Main application component
+ */
+function App(): JSX.Element {
+  // Application state
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([]);
-  const [versionMismatch, setVersionMismatch] = useState(false);
+  const [versionMismatch, setVersionMismatch] = useState<boolean>(false);
   const [versionInfo, setVersionInfo] = useState<{ backend: string; frontend: string } | null>(null);
   const [userId, setUserId] = useState<string>("");
   
+  /**
+   * Effect to handle version compatibility and user ID initialization
+   */
   useEffect(() => {
     // Register for version change notifications
     const unsubscribe = APIService.onVersionChange((backendVersion, frontendVersion) => {
@@ -42,20 +55,28 @@ function App() {
     };
   }, []);
 
-  const handleTranscriptionComplete = (text: string, jobId: string) => {
+  /**
+   * Handler for when a transcription is completed
+   * @param text - The transcribed text
+   * @param jobId - ID of the completed job
+   */
+  const handleTranscriptionComplete = useCallback((text: string, jobId: string): void => {
     // Add the new transcription to the list
     const newTranscription: Transcription = {
       id: jobId,
-      text: text,
+      text,
       timestamp: new Date()
     };
     
     setTranscriptions(prev => [newTranscription, ...prev]);
-  };
+  }, []);
   
-  const handleRefresh = () => {
+  /**
+   * Refreshes the page to update frontend version
+   */
+  const handleRefresh = useCallback((): void => {
     window.location.reload();
-  };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">

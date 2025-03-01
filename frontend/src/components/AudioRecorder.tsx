@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Button,
   Typography,
@@ -24,6 +24,9 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
   maxWidth: "400px",
 }));
 
+/**
+ * Represents a transcription job from the backend
+ */
 interface TranscriptionJob {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -40,12 +43,20 @@ interface TranscriptionJob {
   };
 }
 
+/**
+ * Props for the AudioRecorder component
+ */
 interface AudioRecorderProps {
+  /** Callback fired when transcription is complete with the text and job ID */
   onTranscriptionComplete: (text: string, jobId: string) => void;
+  /** Whether the recorder is disabled (e.g., due to version mismatch) */
   disabled?: boolean;
 }
 
-const AudioRecorder = ({ onTranscriptionComplete, disabled = false }: AudioRecorderProps) => {
+/**
+ * AudioRecorder component allows users to record audio and get transcriptions
+ */
+const AudioRecorder: React.FC<AudioRecorderProps> = ({ onTranscriptionComplete, disabled = false }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
     null
@@ -56,17 +67,24 @@ const AudioRecorder = ({ onTranscriptionComplete, disabled = false }: AudioRecor
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const [isPolling, setIsPolling] = useState<boolean>(false);
 
-  const MAX_RECORDING_TIME = 60; // Increase max recording time to 60 seconds for better testing
+  // Maximum recording time in seconds
+  const MAX_RECORDING_TIME = 60;
   
-  // Helper function to format time in seconds to MM:SS
+  /**
+   * Formats time in seconds to MM:SS format
+   * @param seconds - Time in seconds to format
+   * @returns Formatted time string in MM:SS format
+   */
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Create a stable version of stopRecording using useCallback to avoid unnecessary re-renders
-  const stopRecording = React.useCallback(() => {
+  /**
+   * Stops the current recording session
+   */
+  const stopRecording = useCallback(() => {
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
       setFinalRecordingTime(recordingTime);
@@ -75,7 +93,9 @@ const AudioRecorder = ({ onTranscriptionComplete, disabled = false }: AudioRecor
     }
   }, [mediaRecorder, recordingTime]);
 
-  // Recording timer effect - simplified version with direct interval
+  /**
+   * Effect to handle recording timer
+   */
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
@@ -101,7 +121,10 @@ const AudioRecorder = ({ onTranscriptionComplete, disabled = false }: AudioRecor
     };
   }, [isRecording, MAX_RECORDING_TIME, stopRecording]);
 
-  const startRecording = async () => {
+  /**
+   * Starts a new recording session
+   */
+  const startRecording = async (): Promise<void> => {
     try {
       setRecordingTime(0);
 
@@ -179,8 +202,10 @@ const AudioRecorder = ({ onTranscriptionComplete, disabled = false }: AudioRecor
     }
   };
 
-  // Function to poll for job status updates
-  const pollJobsStatus = async () => {
+  /**
+   * Polls for updates on active transcription jobs
+   */
+  const pollJobsStatus = async (): Promise<void> => {
     try {
       console.log('Polling for job status updates...', activeJobs);
       

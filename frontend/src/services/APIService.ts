@@ -1,31 +1,59 @@
+// API Response types
 interface APIResponse<T> {
   data?: T;
   error?: string;
   version?: string;
 }
 
+// Job status types
+type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+// Transcription Job interface
 interface TranscriptionJob {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: JobStatus;
   progress: number;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
   result: string | null;
   error: string | null;
+  categories?: {
+    categories: string[];
+    sentiment: string;
+    confidence: number;
+  };
 }
 
+// Job response interfaces
+interface TranscriptionJobResponse {
+  job_id: string;
+  status: JobStatus;
+}
+
+interface AllJobsResponse {
+  jobs: TranscriptionJob[];
+}
+
+// Version callback type
 type VersionChangeCallback = (backendVersion: string, frontendVersion: string) => void;
 
+/**
+ * APIService handles all communication with the backend API.
+ * Includes version compatibility checking and user ID management.
+ */
 class APIService {
-  private baseUrl: string = "http://localhost:8000";
-  private currentVersion: string = "1.0.0";
+  // API configuration
+  private readonly baseUrl: string = "http://localhost:8000";
+  private readonly currentVersion: string = "1.0.0";
+  private readonly USER_ID_KEY = "jotpsych_user_id";
+  
+  // State
   private backendVersion: string = "";
   private userID: string = "";
   private versionMismatch: boolean = false;
   private versionChangeCallbacks: VersionChangeCallback[] = [];
   private versionCheckInterval: number | null = null;
-  private readonly USER_ID_KEY = "jotpsych_user_id";
 
   constructor() {
     // Initialize user ID from localStorage or get from server
@@ -158,40 +186,49 @@ class APIService {
     });
   }
 
-  // Generic request handler
+  /**
+   * Generic request handler for all API calls
+   * @param endpoint - API endpoint to call
+   * @param method - HTTP method
+   * @param body - Optional request body
+   * @returns Promise with typed API response
+   */
   private async makeRequest<T>(
     endpoint: string,
     method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
     body?: FormData | object
   ): Promise<APIResponse<T>> {
     try {
-      // Don't make requests if there's a version mismatch
+      // Don't make requests if there's a version mismatch (except for version and user endpoints)
       if (this.versionMismatch && endpoint !== '/version' && endpoint !== '/user') {
         return {
           error: `Version mismatch detected: Your app (${this.currentVersion}) needs to be updated to match the server (${this.backendVersion}). Please refresh your browser.`
         };
       }
 
+      // Prepare headers
       const headers: HeadersInit = {
         'X-Frontend-Version': this.currentVersion
       };
       
-      // Only add user ID if it's initialized and not a request to get a user ID
+      // Add user ID to all requests except for /user endpoint
       if (this.userID && endpoint !== '/user') {
         headers['X-User-ID'] = this.userID;
       }
 
-      // Add Content-Type header if body is a plain object (not FormData)
+      // Set content type for JSON payloads
       if (body && !(body instanceof FormData)) {
         headers["Content-Type"] = "application/json";
       }
 
+      // Prepare request options
       const requestOptions: RequestInit = {
         method,
         headers,
         body: body instanceof FormData ? body : JSON.stringify(body),
       };
 
+      // Make the request
       const response = await fetch(
         `${this.baseUrl}${endpoint}`,
         requestOptions
@@ -225,16 +262,24 @@ class APIService {
     }
   }
 
-  // Updated transcribeAudio to start a transcription job
-  async transcribeAudio(audioBlob: Blob): Promise<APIResponse<{job_id: string; status: string}>> {
+  /**
+   * Uploads audio blob for transcription
+   * @param audioBlob - The audio recording blob to transcribe
+   * @returns Promise with job creation response
+   */
+  public async transcribeAudio(audioBlob: Blob): Promise<APIResponse<TranscriptionJobResponse>> {
     const formData = new FormData();
-    formData.append("audio", audioBlob);
+    formData.append("audio", audioBlob, "recording.wav");
 
-    return this.makeRequest<{job_id: string; status: string}>("/transcribe", "POST", formData);
+    return this.makeRequest<TranscriptionJobResponse>("/transcribe", "POST", formData);
   }
   
-  // Get status of a specific transcription job
-  async getJobStatus(jobId: string): Promise<APIResponse<TranscriptionJob>> {
+  /**
+   * Gets status of a specific transcription job
+   * @param jobId - ID of the job to check
+   * @returns Promise with job status
+   */
+  public async getJobStatus(jobId: string): Promise<APIResponse<TranscriptionJob>> {
     console.log(`Polling job status for job ${jobId}`);
     try {
       const response = await this.makeRequest<TranscriptionJob>(`/job/${jobId}`, "GET");
@@ -250,16 +295,18 @@ class APIService {
       return response;
     } catch (error) {
       console.error(`Error polling job ${jobId}:`, error);
-      return { error: `Failed to get job status: ${error}` };
+      return { error: `Failed to get job status: ${error instanceof Error ? error.message : String(error)}` };
     }
   }
   
-  // Get all transcription jobs
-  async getAllJobs(): Promise<APIResponse<{jobs: TranscriptionJob[]}>> {
+  /**
+   * Gets all transcription jobs
+   * @returns Promise with all jobs
+   */
+  public async getAllJobs(): Promise<APIResponse<AllJobsResponse>> {
     console.log('Fetching all jobs from server');
     try {
-      const response = await this.makeRequest<{jobs: TranscriptionJob[]}>("/jobs", "GET");
-      console.log('All jobs response:', response);
+      const response = await this.makeRequest<AllJobsResponse>("/jobs", "GET");
       
       if (response.error) {
         console.error('Error in getAllJobs response:', response.error);
@@ -271,16 +318,22 @@ class APIService {
       return response;
     } catch (error) {
       console.error('Error getting all jobs:', error);
-      return { error: `Failed to get all jobs: ${error}` };
+      return { error: `Failed to get all jobs: ${error instanceof Error ? error.message : String(error)}` };
     }
   }
 
-  // Public method to check if there's a version mismatch
+  /**
+   * Check if there's a version mismatch between frontend and backend
+   * @returns boolean indicating if versions don't match
+   */
   public hasVersionMismatch(): boolean {
     return this.versionMismatch;
   }
 
-  // Get version information
+  /**
+   * Get current version information
+   * @returns Object containing frontend and backend versions
+   */
   public getVersionInfo(): { frontend: string, backend: string | null } {
     return {
       frontend: this.currentVersion,
