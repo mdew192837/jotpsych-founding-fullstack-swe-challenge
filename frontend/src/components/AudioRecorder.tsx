@@ -15,6 +15,7 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
       mediaRecorder.stop();
       setFinalRecordingTime(recordingTime);
       setIsRecording(false);
+      setRecordingTime(0);
     }
   };
 
@@ -34,7 +35,7 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
     return () => {
       clearInterval(interval);
     };
-  }, [isRecording]);
+  }, [isRecording, recordingTime, stopRecording]);
 
   const startRecording = async () => {
     try {
@@ -78,7 +79,7 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      {finalRecordingTime > 0 && (
+      {!isRecording && finalRecordingTime > 0 && (
         <p className="text-sm text-gray-600">
           Final recording time: {finalRecordingTime}s
         </p>
@@ -92,7 +93,7 @@ const AudioRecorder = ({ onTranscriptionComplete }) => {
         }`}
       >
         {isRecording
-          ? `Stop Recording (${5 - recordingTime}s)`
+          ? `Stop Recording (${recordingTime}s)`
           : "Start Recording"}
       </button>
       {isRecording && (
